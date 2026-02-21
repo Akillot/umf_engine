@@ -1,198 +1,48 @@
-use roxmltree::Document;
-use std::fs;
-use std::fs::File;
-use std::path::Path;
+mod core;
+mod parsers;
+mod compilers;
+
 use std::env;
 use std::io::{self, Write};
-
-#[derive(Debug)]
-struct McfProject {
-    title: String,
-    bpm: f32, 
-    tracks: Vec<Track>,
-    notes: Vec<Note>,
-}
-
-#[derive(Debug)]
-struct Track {
-    id: String,
-    name: String,
-    track_type: String,
-}
-
-#[derive(Debug)]
-struct Note {
-    track_id: String,
-    pitch_name: String, 
-    pitch: u8,          
-    velocity: u8,       
-    start: f32,         
-    duration: f32,      
-}
-
-fn pitch_to_name(pitch: u8) -> String {
-    let notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-    let octave = (pitch as i32 / 12) - 1; 
-    let note = notes[pitch as usize % 12];
-    format!("{}{}", note, octave)
-}
-
-impl McfProject {
-    fn export_to_mcf(&self, output_path: &str) -> Result<(), std::io::Error> {
-        let mut file = File::create(output_path)?;
-
-        writeln!(file, "# MCF v0.3")?;
-        writeln!(file, "project: \"{}\"", self.title)?;
-        writeln!(file, "bpm: {:.1}", self.bpm)?;
-        writeln!(file, "key: \"C\"")?;      
-        writeln!(file, "scale: \"Major\"\n")?; 
-
-        writeln!(file, "# TRACKS (id, name, type)")?;
-        writeln!(file, "tr:")?;
-        for track in &self.tracks {
-            writeln!(file, "{}, \"{}\", {}", track.id, track.name, track.track_type)?;
-        }
-        writeln!(file, "\n# NOTES (track, note, velocity, start, duration)")?;
-        writeln!(file, "nt:")?;
-        
-        for note in &self.notes {
-            writeln!(
-                file,
-                "{}, {}, {}, {:.2}, {:.2}",
-                note.track_id, note.pitch_name, note.velocity, note.start, note.duration
-            )?;
-        }
-
-        Ok(())
-    }
-}
-
-fn parse_ableton_xml(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> {
-    println!("Reading XML: {}...", file_path);
-    let text = fs::read_to_string(file_path)?;
-    let doc = Document::parse(&text)?;
-
-    let mut bpm: f32 = 120.0;
-    for node in doc.descendants() {
-        if node.has_tag_name("Tempo") {
-            if let Some(manual) = node.children().find(|n| n.has_tag_name("Manual")) {
-                if let Some(val) = manual.attribute("Value") {
-                    bpm = val.parse::<f32>().unwrap_or(120.0);
-                    break;
-                }
-            }
-        }
-    }
-
-    let mut tracks = Vec::new();
-    let mut notes = Vec::new();
-    let mut track_counter = 1;
-    
-    for track_node in doc.descendants() {
-        if track_node.has_tag_name("MidiTrack") || track_node.has_tag_name("AudioTrack") {
-            let track_type = if track_node.has_tag_name("MidiTrack") { "midi" } else { "audio" };
-            let track_id = format!("t{:02}", track_counter);
-            
-            let mut track_name = format!("Track {}", track_counter);
-            if let Some(name_node) = track_node.descendants().find(|n| n.has_tag_name("EffectiveName")) {
-                if let Some(val) = name_node.attribute("Value") {
-                    if !val.is_empty() {
-                        track_name = val.to_string();
-                    }
-                }
-            }
-
-            tracks.push(Track {
-                id: track_id.clone(),
-                name: track_name,
-                track_type: track_type.to_string(),
-            });
-
-            if track_type == "midi" {
-                for note_node in track_node.descendants() {
-                    if note_node.has_tag_name("MidiNoteEvent") {
-                        let pitch = note_node.attribute("Key").unwrap_or("60").parse::<u8>().unwrap_or(60);
-                        let velocity = note_node.attribute("Velocity").unwrap_or("100").parse::<u8>().unwrap_or(100);
-                        let start = note_node.attribute("Time").unwrap_or("0.0").parse::<f32>().unwrap_or(0.0);
-                        let duration = note_node.attribute("Duration").unwrap_or("1.0").parse::<f32>().unwrap_or(1.0);
-
-                        notes.push(Note {
-                            track_id: track_id.clone(),
-                            pitch_name: pitch_to_name(pitch),
-                            pitch,
-                            velocity,
-                            start,
-                            duration,
-                        });
-                    }
-                }
-            }
-            track_counter += 1;
-        }
-    }
-
-    let project_name = Path::new(file_path)
-        .file_stem()
-        .unwrap_or_default()
-        .to_str()
-        .unwrap_or("Unknown_Project");
-
-    Ok(McfProject {
-        title: project_name.to_string(),
-        bpm,
-        tracks,
-        notes,
-    })
-}
+use std::path::Path;
 
 fn main() {
-    println!("=== 🎵 MCF Engine v0.3 ===");
+    println!("=== MCF Engine v0.3 ===");
     
     let args: Vec<String> = env::args().collect();
-
     let target_file = if args.len() > 1 {
         args[1].clone()
     } else {
-        print!("📁 Enter XML file name [example: TestAbleton.xml]: ");
-        io::stdout().flush().unwrap(); 
+        print!("Enter XML file name [e.g. TestAbleton.xml]: ");
+        io::stdout().flush().unwrap();
         
         let mut input = String::new();
-        io::stdin().read_line(&mut input).expect("Ошибка чтения ввода");
+        io::stdin().read_line(&mut input).expect("Input reading error");
         input.trim().to_string()
     };
 
     if target_file.is_empty() {
-        eprintln!("Error: The file name cannot be empty.");
+        eprintln!("Error: File name cannot be empty.");
         return;
     }
 
     if !Path::new(&target_file).exists() {
-        eprintln!("Error: File '{}' not found. Make sure it is located in the project folder.", target_file);
+        eprintln!("Error: File [{}] not found.", target_file);
         return;
     }
 
-    match parse_ableton_xml(&target_file) {
+    match parsers::ableton::parse(&target_file) {
         Ok(project) => {
-            println!("Project: {}", project.title);
-            println!("BPM:     {:.1}\n", project.bpm); 
-            
-            println!("--- Tracks ---");
-            for track in &project.tracks {
-                println!("[{}] {} ({})", track.id, track.name, track.track_type);
-            }
-            
-            println!("\n--- Notes [found: {}] ---", project.notes.len());
-            for note in project.notes.iter().take(5) { 
-                println!("{} | {:<3} [MIDI: {}] | start: {:<5} | vel: {}", 
-                    note.track_id, note.pitch_name, note.pitch, note.start, note.velocity);
-            }
+            println!("\nProject [{}] [BPM: {:.1}] successfully read!", project.title, project.bpm);
+            println!("   Tracks found: {}", project.tracks.len());
+            println!("   Notes found: {}", project.notes.len());
 
             let output_mcf = format!("{}.mcf", project.title);
-            match project.export_to_mcf(&output_mcf) {
-                Ok(_) => println!("\n SUCCESS! File '{}' saved.", output_mcf),
-                Err(e) => eprintln!("\n Error saving file: {}", e),
+            match compilers::mcf_out::write(&project, &output_mcf) {
+                Ok(_) => println!("SUCCESS! File [{}] saved.", output_mcf),
+                Err(e) => eprintln!("Save error: {}", e),
             }
         }
-        Err(e) => eprintln!(" Critical Error: {}", e),
+        Err(e) => eprintln!("Critical Error: {}", e),
     }
 }
