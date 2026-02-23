@@ -7,13 +7,13 @@ use std::io::{self, Write};
 use std::path::Path;
 
 fn main() {
-    println!("=== MCF Engine v0.3 ===");
+    println!("=== MCF Engine v0.4 ===");
     
     let args: Vec<String> = env::args().collect();
     let target_file = if args.len() > 1 {
         args[1].clone()
     } else {
-        print!("Enter XML file name [e.g. TestAbleton.xml]: ");
+        print!("Enter Ableton file name [.als or .xml]: ");
         io::stdout().flush().unwrap();
         
         let mut input = String::new();

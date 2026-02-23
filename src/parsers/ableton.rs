@@ -2,6 +2,8 @@ use crate::core::{McfProject, Note, Track};
 use roxmltree::Document;
 use std::fs;
 use std::path::Path;
+use flate2::read::GzDecoder;
+use std::io::Read;
 
 fn pitch_to_name(pitch: u8) -> String {
     let notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -11,8 +13,17 @@ fn pitch_to_name(pitch: u8) -> String {
 }
 
 pub fn parse(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> {
-    println!("Reading XML: {}...", file_path);
-    let text = fs::read_to_string(file_path)?;
+    println!("Reading file: {}...", file_path);
+
+    let mut text = String::new();
+    if file_path.ends_with(".als") {
+        let file = fs::File::open(file_path)?;
+        let mut gz = GzDecoder::new(file);
+        gz.read_to_string(&mut text)?;
+    } else {
+        text = fs::read_to_string(file_path)?;
+    }
+
     let doc = Document::parse(&text)?;
 
     let mut bpm: f32 = 120.0;
