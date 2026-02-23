@@ -2,6 +2,8 @@
 pub struct McfProject {
     pub title: String,
     pub bpm: f32,
+    pub scale_root: String,
+    pub scale_name: String,
     pub tracks: Vec<Track>,
     pub notes: Vec<Note>,
 }

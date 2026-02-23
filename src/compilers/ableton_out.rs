@@ -12,7 +12,7 @@ fn rewrite_ids(xml: &str, start_id: &mut usize) -> String {
     result.push_str(parts.next().unwrap_or(""));
     for part in parts {
         if let Some(end_quote) = part.find("\"") {
-            result.push_str(&format!("Id=\"{}\"", start_id));
+            result.push_str(&format!["Id=\"{}\"", start_id]);
             *start_id += 1;
             result.push_str(&part[end_quote + 1..]);
         } else {
@@ -40,9 +40,9 @@ fn inject_clip(track_xml: &str, clip_xml: &str) -> String {
     if let Some(pos) = res.find("<Events>") {
         res.insert_str(pos + 8, clip_xml);
     } else if let Some(pos) = res.find("<Events />") {
-        res.replace_range(pos..pos + 10, &format!("<Events>{}</Events>", clip_xml));
+        res.replace_range(pos..pos + 10, &format!["<Events>{}</Events>", clip_xml]);
     } else if let Some(pos) = res.find("<Events/>") {
-        res.replace_range(pos..pos + 9, &format!("<Events>{}</Events>", clip_xml));
+        res.replace_range(pos..pos + 9, &format!["<Events>{}</Events>", clip_xml]);
     }
     res
 }
@@ -52,7 +52,7 @@ fn set_tempo(xml: &str, bpm: f32) -> String {
     if let Some(start) = res.find("<Tempo>") {
         if let Some(end) = res[start..].find("</Tempo>") {
             let abs_end = start + end + 8;
-            res.replace_range(start..abs_end, &format!("<Tempo><Manual Value=\"{}\"/></Tempo>", bpm));
+            res.replace_range(start..abs_end, &format!["<Tempo><Manual Value=\"{}\"/></Tempo>", bpm]);
         }
     }
     res
@@ -93,27 +93,46 @@ pub fn write(project: &McfProject, output_path: &str) -> Result<(), Box<dyn std:
         track_xml = rewrite_ids(&track_xml, &mut id_counter);
         track_xml = replace_name(&track_xml, &track.name);
 
-        let mut clip = String::new();
-        clip.push_str(&format!("<MidiClip Id=\"{}\">", id_counter));
-        id_counter += 1;
-        clip.push_str("<CurrentStart Value=\"0\"/><CurrentEnd Value=\"1000\"/><Loop><LoopEnd Value=\"1000\"/></Loop>");
-        clip.push_str("<Name><EffectiveName Value=\"MCF Clip\"/></Name>");
-        clip.push_str("<Notes><KeyTracks>");
-
         let mut notes_by_pitch: HashMap<u8, Vec<&crate::core::Note>> = HashMap::new();
         for note in project.notes.iter().filter(|n| n.track_id == track.id) {
             notes_by_pitch.entry(note.pitch).or_insert_with(Vec::new).push(note);
         }
 
         let has_notes = !notes_by_pitch.is_empty();
+        
+        let mut clip_end: f32 = 4.0;
+        if has_notes {
+            for notes in notes_by_pitch.values() {
+                for note in notes {
+                    let end_time = note.start + note.duration;
+                    if end_time > clip_end {
+                        clip_end = end_time;
+                    }
+                }
+            }
+        }
+        let clip_length = (clip_end / 4.0).ceil() * 4.0;
+
+        let mut clip = String::new();
+        clip.push_str(&format!["<MidiClip Id=\"{}\">", id_counter]);
+        id_counter += 1;
+        
+        clip.push_str(&format![
+            "<CurrentStart Value=\"0\"/><CurrentEnd Value=\"{0}\"/><Loop><LoopStart Value=\"0\"/><LoopEnd Value=\"{0}\"/><StartRelative Value=\"0\"/><LoopOn Value=\"true\"/><HiddenLoopStart Value=\"0\"/><HiddenLoopEnd Value=\"{0}\"/></Loop>",
+            clip_length
+        ]);
+        
+        clip.push_str("<Name><EffectiveName Value=\"MCF Clip\"/></Name>");
+        clip.push_str("<Notes><KeyTracks>");
+
         if has_notes {
             for (pitch, notes) in notes_by_pitch {
-                clip.push_str(&format!("<KeyTrack Id=\"{}\">", id_counter));
+                clip.push_str(&format!["<KeyTrack Id=\"{}\">", id_counter]);
                 id_counter += 1;
-                clip.push_str(&format!("<MidiKey Value=\"{}\"/>", pitch));
+                clip.push_str(&format!["<MidiKey Value=\"{}\"/>", pitch]);
                 clip.push_str("<Notes>");
                 for note in notes {
-                    clip.push_str(&format!("<MidiNoteEvent Time=\"{}\" Duration=\"{}\" Velocity=\"{}\"/>", note.start, note.duration, note.velocity));
+                    clip.push_str(&format!["<MidiNoteEvent Time=\"{}\" Duration=\"{}\" Velocity=\"{}\"/>", note.start, note.duration, note.velocity]);
                 }
                 clip.push_str("</Notes>");
                 clip.push_str("</KeyTrack>");
@@ -139,9 +158,9 @@ pub fn write(project: &McfProject, output_path: &str) -> Result<(), Box<dyn std:
         Box::new(file)
     };
 
-    write!(writer, "{}", prefix)?;
-    write!(writer, "{}", tracks_output)?;
-    write!(writer, "{}", suffix)?;
+    write![writer, "{}", prefix]?;
+    write![writer, "{}", tracks_output]?;
+    write![writer, "{}", suffix]?;
 
     Ok(())
 }

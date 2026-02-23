@@ -19,19 +19,21 @@ fn name_to_pitch(name: &str) -> u8 {
         "A#" => 10, "B" => 11, _ => 0,
     };
 
-    let octave = octave_str.parse::<i32>().unwrap_or(4);
-    let pitch = (octave + 1) * 12 + note_val;
+    let octave = octave_str.parse::<i32>().unwrap_or(3);
+    let pitch = (octave + 2) * 12 + note_val;
     
     if pitch < 0 { 0 } else if pitch > 255 { 255 } else { pitch as u8 }
 }
 
 pub fn parse(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> {
-    println!("Reading MCF: {}...", file_path);
+    println!["Reading MCF: {}...", file_path];
     let text = fs::read_to_string(file_path)?;
 
     let mut project = McfProject {
         title: String::from("Unknown"),
         bpm: 120.0,
+        scale_root: String::from("C"),
+        scale_name: String::from("Major"),
         tracks: Vec::new(),
         notes: Vec::new(),
     };
@@ -60,14 +62,26 @@ pub fn parse(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> 
                 } else if line.starts_with("bpm:") {
                     let bpm_str = line.replace("bpm:", "").trim().to_string();
                     project.bpm = bpm_str.parse::<f32>().unwrap_or(120.0);
+                } else if line.starts_with("key:") {
+                    project.scale_root = line.replace("key:", "").replace("\"", "").trim().to_string();
+                } else if line.starts_with("scale:") {
+                    project.scale_name = line.replace("scale:", "").replace("\"", "").trim().to_string();
                 }
             }
             "tr" => {
                 let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
                 if parts.len() >= 5 {
+                    let mut clean_name = parts[1].replace("\"", "");
+                    
+                    if let Some(dash_idx) = clean_name.find('-') {
+                        if clean_name[..dash_idx].chars().all(|c| c.is_digit(10)) {
+                            clean_name = clean_name[dash_idx + 1..].trim().to_string();
+                        }
+                    }
+
                     project.tracks.push(Track {
                         id: parts[0].to_string(),
-                        name: parts[1].replace("\"", ""),
+                        name: clean_name,
                         track_type: parts[2].to_string(),
                         volume: parts[3].parse::<f32>().unwrap_or(0.85),
                         pan: parts[4].parse::<f32>().unwrap_or(0.0),

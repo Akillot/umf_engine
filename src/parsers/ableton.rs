@@ -7,13 +7,13 @@ use std::io::Read;
 
 fn pitch_to_name(pitch: u8) -> String {
     let notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-    let octave = (pitch as i32 / 12) - 1;
+    let octave = (pitch as i32 / 12) - 2;
     let note = notes[pitch as usize % 12];
-    format!("{}{}", note, octave)
+    format!["{}{}", note, octave]
 }
 
 pub fn parse(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> {
-    println!("Reading file: {}...", file_path);
+    println!["Reading file: {}...", file_path];
 
     let mut text = String::new();
     if file_path.ends_with(".als") {
@@ -38,6 +38,42 @@ pub fn parse(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> 
         }
     }
 
+    let mut scale_root = String::from("C");
+    let mut scale_name = String::from("Major");
+    for node in doc.descendants() {
+        if node.has_tag_name("ScaleInformation") {
+            if let Some(root_node) = node.descendants().find(|n| n.has_tag_name("RootNote")) {
+                if let Some(val) = root_node.attribute("Value") {
+                    let root_idx = val.parse::<usize>().unwrap_or(0);
+                    let notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+                    scale_root = notes[root_idx % 12].to_string();
+                }
+            }
+            if let Some(name_node) = node.descendants().find(|n| n.has_tag_name("Name")) {
+                if let Some(val) = name_node.attribute("Value") {
+                    let scales = [
+                        "Major", "Minor", "Dorian", "Mixolydian", "Lydian", "Phrygian", "Locrian",
+                        "Diminished", "Whole-half", "Whole Tone", "Minor Blues", "Minor Pentatonic",
+                        "Major Pentatonic", "Harmonic Minor", "Melodic Minor", "Super Locrian",
+                        "Bhairav", "Hungarian Minor", "Minor Gypsy", "Hirojoshi", "In-Sen", "Iwato",
+                        "Kumoi", "Pelog", "Spanish"
+                    ];
+                    
+                    if let Ok(idx) = val.parse::<usize>() {
+                        if idx < scales.len() {
+                            scale_name = scales[idx].to_string();
+                        } else {
+                            scale_name = format!["Scale_{}", idx];
+                        }
+                    } else {
+                        scale_name = val.to_string();
+                    }
+                }
+            }
+            break;
+        }
+    }
+
     let mut tracks = Vec::new();
     let mut notes = Vec::new();
     let mut track_counter = 1;
@@ -45,13 +81,32 @@ pub fn parse(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> 
     for track_node in doc.descendants() {
         if track_node.has_tag_name("MidiTrack") || track_node.has_tag_name("AudioTrack") {
             let track_type = if track_node.has_tag_name("MidiTrack") { "midi" } else { "audio" };
-            let track_id = format!("t{:02}", track_counter);
+            let track_id = format!["t{:02}", track_counter];
 
-            let mut track_name = format!("Track {}", track_counter);
-            if let Some(name_node) = track_node.descendants().find(|n| n.has_tag_name("EffectiveName")) {
-                if let Some(val) = name_node.attribute("Value") {
-                    if !val.is_empty() {
-                        track_name = val.to_string();
+            let mut track_name = format!["Track {}", track_counter];
+            if let Some(name_node) = track_node.descendants().find(|n| n.has_tag_name("Name")) {
+                let mut found_user_name = false;
+                if let Some(user_name) = name_node.descendants().find(|n| n.has_tag_name("UserName")) {
+                    if let Some(val) = user_name.attribute("Value") {
+                        if !val.is_empty() {
+                            track_name = val.to_string();
+                            found_user_name = true;
+                        }
+                    }
+                }
+                
+                if !found_user_name {
+                    if let Some(eff_name) = name_node.descendants().find(|n| n.has_tag_name("EffectiveName")) {
+                        if let Some(val) = eff_name.attribute("Value") {
+                            if !val.is_empty() {
+                                track_name = val.to_string();
+                                if let Some(dash_idx) = track_name.find('-') {
+                                    if track_name[..dash_idx].chars().all(|c| c.is_digit(10)) {
+                                        track_name = track_name[dash_idx + 1..].to_string();
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -122,6 +177,8 @@ pub fn parse(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> 
     Ok(McfProject {
         title: project_name.to_string(),
         bpm,
+        scale_root,
+        scale_name,
         tracks,
         notes,
     })
