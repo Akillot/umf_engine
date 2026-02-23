@@ -85,9 +85,15 @@ pub fn parse(file_path: &str) -> Result<McfProject, Box<dyn std::error::Error>> 
             });
 
             if track_type == "midi" {
-                for note_node in track_node.descendants() {
-                    if note_node.has_tag_name("MidiNoteEvent") {
-                        let pitch = note_node.attribute("Key").unwrap_or("60").parse::<u8>().unwrap_or(60);
+                for key_track in track_node.descendants().filter(|n| n.has_tag_name("KeyTrack")) {
+                    let mut pitch = 60;
+                    if let Some(midi_key) = key_track.descendants().find(|n| n.has_tag_name("MidiKey")) {
+                        if let Some(val) = midi_key.attribute("Value") {
+                            pitch = val.parse::<u8>().unwrap_or(60);
+                        }
+                    }
+
+                    for note_node in key_track.descendants().filter(|n| n.has_tag_name("MidiNoteEvent")) {
                         let velocity = note_node.attribute("Velocity").unwrap_or("100").parse::<u8>().unwrap_or(100);
                         let start = note_node.attribute("Time").unwrap_or("0.0").parse::<f32>().unwrap_or(0.0);
                         let duration = note_node.attribute("Duration").unwrap_or("1.0").parse::<f32>().unwrap_or(1.0);
